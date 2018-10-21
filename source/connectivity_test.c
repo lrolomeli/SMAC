@@ -931,6 +931,7 @@ bool_t SendReceivePackets(operationModes_t mode)
 	            Serial_Print(mAppSer, "\f\r\n Running Sending test (1)", gAllowToBlock_d);
 	            bTxDone = FALSE;
 	            (void)MCPSDataRequest(gAppTxPacket);
+	            sendState = gSendStateIdle_c;
 				break;
 			case 2:
 				Serial_Print(mAppSer, "\f\r\n Running Sending test (2)", gAllowToBlock_d);
@@ -1044,6 +1045,8 @@ bool_t SendReceivePackets(operationModes_t mode)
                 else if('p' == gu8UartData)
                 {
                     bBackFlag = TRUE;
+                    ReceiveState = gReceiveStateInit_c;
+                    SelfNotificationEvent();
                 }
                 evDataFromUART = FALSE;
             }
@@ -1053,6 +1056,9 @@ bool_t SendReceivePackets(operationModes_t mode)
             {
                 if (gAppRxPacket->rxStatus == rxSuccessStatus_c)
                 {
+
+                	LED_ToggleLed(LED_ALL);
+
                     if(stringComp((uint8_t*)"ledoff",&gAppRxPacket->smacPdu.smacPdu[0],6))
                     {
                     	LED_StopFlashingAllLeds();
@@ -1064,16 +1070,16 @@ bool_t SendReceivePackets(operationModes_t mode)
                     }
 
 					u16ReceivedPackets[gAppRxPacket->instanceId]++;
-					e32RssiSum[gAppRxPacket->instanceId] +=
-							(energy8_t) u8LastRxRssiValue;
+					e32RssiSum[gAppRxPacket->instanceId] += (energy8_t) u8LastRxRssiValue;
 					Serial_Print(mAppSer, "Packet ", gAllowToBlock_d);
-					Serial_PrintDec(mAppSer,
-							(uint32_t) u16ReceivedPackets[gAppRxPacket->instanceId]);
+					Serial_PrintDec(mAppSer, (uint32_t) u16ReceivedPackets[gAppRxPacket->instanceId]);
 					Serial_Print(mAppSer, ". Packet index: ", gAllowToBlock_d);
-					Serial_PrintDec(mAppSer,
-							(uint32_t) u16PacketsIndex[gAppRxPacket->instanceId]);
-					Serial_Print(mAppSer, ". Rssi during RX: ",
-							gAllowToBlock_d);
+
+					/** Packet Pay load */
+	                gAppRxPacket->smacPdu.smacPdu[gAppRxPacket->u8DataLength] = '\0';
+	                Serial_Print(mAppSer, (char * )&(gAppRxPacket->smacPdu.smacPdu[0]),gAllowToBlock_d);
+
+					Serial_Print(mAppSer, ". Rssi during RX: ", gAllowToBlock_d);
 					e8TempRssivalue = (energy8_t) u8LastRxRssiValue;
 
 					if (e8TempRssivalue < 0)
@@ -1083,14 +1089,9 @@ bool_t SendReceivePackets(operationModes_t mode)
 					}
 					Serial_PrintDec(mAppSer, (uint32_t) e8TempRssivalue);
 					Serial_Print(mAppSer, "\r\n", gAllowToBlock_d);
-					if (u16PacketsIndex[gAppRxPacket->instanceId]
-							== u16TotalPackets[gAppRxPacket->instanceId])
-					{
-						SelfNotificationEvent();
-						ReceiveState = gReceiveStateIdle_c;
-					}
 
                }
+               SelfNotificationEvent();
                bRxDone = FALSE;
                if(u16PacketsIndex[gAppRxPacket->instanceId] < u16TotalPackets[gAppRxPacket->instanceId])
                {
@@ -1107,7 +1108,18 @@ bool_t SendReceivePackets(operationModes_t mode)
             	   Serial_Print(mAppSer, "\n\rPress [Enter] to return to menu\r\n\r\n", gAllowToBlock_d);
                    ReceiveState = gReceiveStateIdle_c;
                }
+               else if('p' == gu8UartData)
+               {
+                   bBackFlag = TRUE;
+               }
                evDataFromUART = FALSE;
+           }
+           else{
+               gAppRxPacket->u8MaxDataLength = gMaxSmacSDULength_c;
+               MLMESetActivePan(gSmacPan0_c);
+               (void)MLMERXEnableRequest(gAppRxPacket, 0);
+               shortCutsEnabled = FALSE;
+               ReceiveState = gReceiveStateStartTest_c;
            }
                 break;
            case gReceiveStateIdle_c:
