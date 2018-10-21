@@ -159,6 +159,16 @@ typedef enum SendStates_tag
   gSendStateMaxState_c
 }SendStates_t;
 
+typedef enum ReceiveStates_tag
+{
+  gReceiveStateInit_c = 0,
+  gReceiveStateIdle_c,
+  gReceiveWaitStartTest_c,
+  gReceiveStateStartTest_c,
+  gReceiveStateRunningTest_c,
+  gReceiveStateMaxState_c
+}ReceiveStates_t;
+
 typedef enum CSenseTCtrlStates_tag
 {
   gCsTcStateInit_c = 0,

@@ -178,6 +178,7 @@ PerRxStates_t              perRxState;
 RangeTxStates_t            rangeTxState;
 RangeRxStates_t            rangeRxState;
 SendStates_t		sendState;
+ReceiveStates_t		ReceiveState;
 EditRegsStates_t    eRState; 
 oRStates_t          oRState;
 rRStates_t          rRState;
@@ -830,11 +831,26 @@ void SerialUIStateMachine(void)
     }
 }
 
+
+
+
 bool_t SendReceivePackets(operationModes_t mode)
 {
-    static uint8_t menuSelection;
+	/*********************
+	 * Send Variables *
+	 ********************/
+	static uint8_t menuSelection;
     static uint8_t payload = 0;
     bool_t bBackFlag = FALSE;
+
+    /*********************
+     * Receive Variables *
+     ********************/
+    static energy32_t e32RssiSum[gNumPans_c];
+    static uint16_t u16ReceivedPackets[gNumPans_c];
+    static uint16_t u16PacketsIndex[gNumPans_c];
+    static uint16_t u16TotalPackets[gNumPans_c];
+    energy8_t e8TempRssivalue;
 
     if(mTxOperation_c == mode && evTestParameters)
     {
@@ -999,6 +1015,114 @@ bool_t SendReceivePackets(operationModes_t mode)
     else
     {
 
+        switch(ReceiveState)
+        {
+        case gReceiveStateInit_c:
+            shortCutsEnabled = TRUE;
+            PrintMenu(cu8ShortCutsBar, mAppSer);
+            PrintMenu(cu8PerRxTestMenu, mAppSer);
+            PrintTestParameters(FALSE);
+            u16TotalPackets[0] = 0;
+            u16ReceivedPackets[0] = 0;
+            u16PacketsIndex[0] = 0;
+            e32RssiSum[0] = 0;
+            ReceiveState = gReceiveWaitStartTest_c;
+            break;
+        case gReceiveWaitStartTest_c:
+            if(evDataFromUART)
+            {
+                if(' ' == gu8UartData)
+                {
+                    Serial_Print(mAppSer, "\f\n\rPER Test Rx Running\r\n\r\n", gAllowToBlock_d);
+                    bRxDone = FALSE;
+                    gAppRxPacket->u8MaxDataLength = gMaxSmacSDULength_c;
+                    MLMESetActivePan(gSmacPan0_c);
+                    (void)MLMERXEnableRequest(gAppRxPacket, 0);
+                    shortCutsEnabled = FALSE;
+                    ReceiveState = gReceiveStateStartTest_c;
+                }
+                else if('p' == gu8UartData)
+                {
+                    bBackFlag = TRUE;
+                }
+                evDataFromUART = FALSE;
+            }
+            break;
+        case gReceiveStateStartTest_c:
+            if(bRxDone)
+            {
+                if (gAppRxPacket->rxStatus == rxSuccessStatus_c)
+                {
+                    if(stringComp((uint8_t*)"ledoff",&gAppRxPacket->smacPdu.smacPdu[0],6))
+                    {
+                    	LED_StopFlashingAllLeds();
+                    }
+
+                    if(stringComp((uint8_t*)"ledflash",&gAppRxPacket->smacPdu.smacPdu[0],8))
+                    {
+                    	LED_StartSerialFlash(LED1);
+                    }
+
+					u16ReceivedPackets[gAppRxPacket->instanceId]++;
+					e32RssiSum[gAppRxPacket->instanceId] +=
+							(energy8_t) u8LastRxRssiValue;
+					Serial_Print(mAppSer, "Packet ", gAllowToBlock_d);
+					Serial_PrintDec(mAppSer,
+							(uint32_t) u16ReceivedPackets[gAppRxPacket->instanceId]);
+					Serial_Print(mAppSer, ". Packet index: ", gAllowToBlock_d);
+					Serial_PrintDec(mAppSer,
+							(uint32_t) u16PacketsIndex[gAppRxPacket->instanceId]);
+					Serial_Print(mAppSer, ". Rssi during RX: ",
+							gAllowToBlock_d);
+					e8TempRssivalue = (energy8_t) u8LastRxRssiValue;
+
+					if (e8TempRssivalue < 0)
+					{
+						e8TempRssivalue *= -1;
+						Serial_Print(mAppSer, "-", gAllowToBlock_d);
+					}
+					Serial_PrintDec(mAppSer, (uint32_t) e8TempRssivalue);
+					Serial_Print(mAppSer, "\r\n", gAllowToBlock_d);
+					if (u16PacketsIndex[gAppRxPacket->instanceId]
+							== u16TotalPackets[gAppRxPacket->instanceId])
+					{
+						SelfNotificationEvent();
+						ReceiveState = gReceiveStateIdle_c;
+					}
+
+               }
+               bRxDone = FALSE;
+               if(u16PacketsIndex[gAppRxPacket->instanceId] < u16TotalPackets[gAppRxPacket->instanceId])
+               {
+                   /*set active pan and enter rx after receiving packet*/
+                   MLMESetActivePan(gAppRxPacket->instanceId);
+                   gAppRxPacket->u8MaxDataLength = gMaxSmacSDULength_c;
+                   MLMERXEnableRequest(gAppRxPacket, 0);
+               }
+           }
+           if(evDataFromUART)
+           {
+               if(' ' == gu8UartData)
+               {
+            	   Serial_Print(mAppSer, "\n\rPress [Enter] to return to menu\r\n\r\n", gAllowToBlock_d);
+                   ReceiveState = gReceiveStateIdle_c;
+               }
+               evDataFromUART = FALSE;
+           }
+                break;
+           case gReceiveStateIdle_c:
+               if((evDataFromUART) && ('\r' == gu8UartData))
+               {
+                   MLMESetActivePan(gSmacPan0_c);
+                   gAppRxPacket = (rxPacket_t*)gau8RxDataBuffer;
+                   ReceiveState = gReceiveStateInit_c;
+                   SelfNotificationEvent();
+               }
+               evDataFromUART = FALSE;
+               break;
+           default:
+               break;
+         }
 
     	return bBackFlag;
 
